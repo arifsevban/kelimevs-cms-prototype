@@ -35,12 +35,29 @@
                 </p>
             </div>
 
-            <div class="flex items-center gap-3">
+            <div class="flex flex-wrap items-center gap-3">
                 <span id="db-status-badge"
                     class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-neutral-900 text-neutral-400 border border-neutral-800">
                     <span class="w-2 h-2 rounded-full bg-neutral-600 animate-pulse"></span>
                     Bağlantı Yok
                 </span>
+
+                <button type="button" id="sync-game-btn"
+                    class="px-3 py-2 bg-neutral-900 hover:bg-neutral-800 border border-neutral-800 rounded-xl text-neutral-300 hover:text-white text-xs font-semibold transition cursor-pointer flex items-center gap-1.5"
+                    title="İçerik sürümünü hemen güncelle ve oyuna yansıt (content_version)">
+                    <i data-lucide="zap" class="w-3.5 h-3.5 text-amber-400"></i>
+                    <span>Oyuna Yansıt</span>
+                </button>
+
+                <div id="auth-header-section" class="hidden items-center gap-2">
+                    <span id="auth-header-email" class="text-xs text-neutral-400 font-mono hidden sm:inline-block max-w-[150px] truncate" title="Giriş yapılmış hesap"></span>
+                    <button type="button" id="header-logout-btn"
+                        class="px-3 py-2 bg-neutral-900 hover:bg-red-950/30 hover:border-red-900/40 text-neutral-400 hover:text-red-400 border border-neutral-800 rounded-xl text-xs font-semibold transition cursor-pointer flex items-center gap-1.5"
+                        title="Oturumu Kapat">
+                        <i data-lucide="log-out" class="w-3.5 h-3.5"></i>
+                        <span>Çıkış Yap</span>
+                    </button>
+                </div>
 
                 <div class="relative group">
                     <button type="button" id="export-backup-btn"
@@ -74,74 +91,125 @@
             class="fixed top-5 right-5 z-50 flex flex-col gap-3 max-w-sm w-full pointer-events-none"></div>
 
         <div id="config-panel" class="hidden mb-8 transition-all duration-300 ease-in-out">
-            <div class="bg-neutral-900 border border-neutral-800 rounded-3xl p-6 shadow-2xl relative overflow-hidden">
+            <div class="bg-neutral-900 border border-neutral-800 rounded-3xl p-6 shadow-2xl relative overflow-hidden space-y-6">
 
-                <div class="flex items-center justify-between mb-4 pb-3 border-b border-neutral-800">
-                    <div class="flex items-center gap-2">
-                        <i data-lucide="key-round" class="w-5 h-5 text-emerald-400"></i>
-                        <h3 class="font-display font-semibold text-neutral-200">Firebase Realtime Database
-                            Yapılandırması
-                        </h3>
+                <div>
+                    <div class="flex items-center justify-between mb-4 pb-3 border-b border-neutral-800">
+                        <div class="flex items-center gap-2">
+                            <i data-lucide="key-round" class="w-5 h-5 text-emerald-400"></i>
+                            <h3 class="font-display font-semibold text-neutral-200">Firebase Realtime Database Yapılandırması</h3>
+                        </div>
+                        <button id="close-config-btn"
+                            class="text-neutral-400 hover:text-neutral-200 transition cursor-pointer">
+                            <i data-lucide="x" class="w-5 h-5"></i>
+                        </button>
                     </div>
-                    <button id="close-config-btn"
-                        class="text-neutral-400 hover:text-neutral-200 transition cursor-pointer">
-                        <i data-lucide="x" class="w-5 h-5"></i>
-                    </button>
+
+                    <form id="config-form" class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div>
+                            <label class="block text-xs font-semibold text-neutral-400 mb-1.5 uppercase">API Key</label>
+                            <input type="password" id="cfg-apiKey" placeholder="AIzaSy..."
+                                class="w-full px-4 py-2.5 bg-black border border-neutral-800 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-emerald-800/40 focus:border-emerald-700 transition text-sm">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-neutral-400 mb-1.5 uppercase">Auth Domain</label>
+                            <input type="text" id="cfg-authDomain" placeholder="proje-id.firebaseapp.com"
+                                class="w-full px-4 py-2.5 bg-black border border-neutral-800 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-emerald-800/40 focus:border-emerald-700 transition text-sm">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-neutral-400 mb-1.5 uppercase">Database URL</label>
+                            <input type="text" id="cfg-databaseURL"
+                                placeholder="https://proje-id-default-rtdb.firebaseio.com"
+                                class="w-full px-4 py-2.5 bg-black border border-neutral-800 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-emerald-800/40 focus:border-emerald-700 transition text-sm">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-neutral-400 mb-1.5 uppercase">Project ID</label>
+                            <input type="text" id="cfg-projectId" placeholder="proje-id"
+                                class="w-full px-4 py-2.5 bg-black border border-neutral-800 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-emerald-800/40 focus:border-emerald-700 transition text-sm">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-neutral-400 mb-1.5 uppercase">Storage Bucket</label>
+                            <input type="text" id="cfg-storageBucket" placeholder="proje-id.appspot.com"
+                                class="w-full px-4 py-2.5 bg-black border border-neutral-800 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-emerald-800/40 focus:border-emerald-700 transition text-sm">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-neutral-400 mb-1.5 uppercase">App ID</label>
+                            <input type="text" id="cfg-appId" placeholder="1:1234:web:abcd..."
+                                class="w-full px-4 py-2.5 bg-black border border-neutral-800 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-emerald-800/40 focus:border-emerald-700 transition text-sm">
+                        </div>
+
+                        <div class="md:col-span-3 flex justify-end gap-3 mt-2">
+                            <button type="button" id="migrate-db-btn"
+                                class="px-4 py-2.5 bg-emerald-500 hover:bg-emerald-400 text-black rounded-xl text-sm font-bold transition cursor-pointer flex items-center gap-1.5 shadow-md shadow-emerald-500/20"
+                                title="Veritabanındaki tüm eski soruları yeni Map şemasına dönüştürür.">
+                                <i data-lucide="database-backup" class="w-4 h-4"></i>
+                                Eski Soruları Senkronize Et
+                            </button>
+                            <button type="button" id="reset-config-btn"
+                                class="px-4 py-2.5 bg-neutral-950 hover:bg-red-950/20 hover:text-red-400 border border-neutral-800 hover:border-red-900/40 text-neutral-400 rounded-xl text-sm font-semibold transition cursor-pointer">
+                                Sıfırla
+                            </button>
+                            <button type="submit"
+                                class="px-6 py-2.5 bg-white hover:bg-emerald-50 hover:text-emerald-950 text-black rounded-xl text-sm font-semibold shadow-lg shadow-emerald-950/20 transition cursor-pointer flex items-center gap-2">
+                                <i data-lucide="save" class="w-4 h-4"></i>
+                                Yapılandırmayı Kaydet
+                            </button>
+                        </div>
+                    </form>
                 </div>
 
-                <form id="config-form" class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div>
-                        <label class="block text-xs font-semibold text-neutral-400 mb-1.5 uppercase">API Key</label>
-                        <input type="password" id="cfg-apiKey" placeholder="AIzaSy..."
-                            class="w-full px-4 py-2.5 bg-black border border-neutral-800 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-emerald-800/40 focus:border-emerald-700 transition text-sm">
-                    </div>
-                    <div>
-                        <label class="block text-xs font-semibold text-neutral-400 mb-1.5 uppercase">Auth Domain</label>
-                        <input type="text" id="cfg-authDomain" placeholder="proje-id.firebaseapp.com"
-                            class="w-full px-4 py-2.5 bg-black border border-neutral-800 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-emerald-800/40 focus:border-emerald-700 transition text-sm">
-                    </div>
-                    <div>
-                        <label class="block text-xs font-semibold text-neutral-400 mb-1.5 uppercase">Database
-                            URL</label>
-                        <input type="text" id="cfg-databaseURL"
-                            placeholder="https://proje-id-default-rtdb.firebaseio.com"
-                            class="w-full px-4 py-2.5 bg-black border border-neutral-800 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-emerald-800/40 focus:border-emerald-700 transition text-sm">
-                    </div>
-                    <div>
-                        <label class="block text-xs font-semibold text-neutral-400 mb-1.5 uppercase">Project ID</label>
-                        <input type="text" id="cfg-projectId" placeholder="proje-id"
-                            class="w-full px-4 py-2.5 bg-black border border-neutral-800 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-emerald-800/40 focus:border-emerald-700 transition text-sm">
-                    </div>
-                    <div>
-                        <label class="block text-xs font-semibold text-neutral-400 mb-1.5 uppercase">Storage
-                            Bucket</label>
-                        <input type="text" id="cfg-storageBucket" placeholder="proje-id.appspot.com"
-                            class="w-full px-4 py-2.5 bg-black border border-neutral-800 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-emerald-800/40 focus:border-emerald-700 transition text-sm">
-                    </div>
-                    <div>
-                        <label class="block text-xs font-semibold text-neutral-400 mb-1.5 uppercase">App ID</label>
-                        <input type="text" id="cfg-appId" placeholder="1:1234:web:abcd..."
-                            class="w-full px-4 py-2.5 bg-black border border-neutral-800 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-emerald-800/40 focus:border-emerald-700 transition text-sm">
+                <!-- Firebase Authentication Section -->
+                <div class="pt-6 border-t border-neutral-800/80">
+                    <div class="flex items-center gap-2 mb-4">
+                        <i data-lucide="shield-check" class="w-5 h-5 text-emerald-400"></i>
+                        <h3 class="font-display font-semibold text-neutral-200">Firebase Yönetici Kimlik Doğrulaması (Auth)</h3>
                     </div>
 
-                    <div class="md:col-span-3 flex justify-end gap-3 mt-2">
-                        <button type="button" id="migrate-db-btn"
-                            class="px-4 py-2.5 bg-emerald-500 hover:bg-emerald-400 text-black rounded-xl text-sm font-bold transition cursor-pointer flex items-center gap-1.5 shadow-md shadow-emerald-500/20"
-                            title="Veritabanındaki tüm eski soruları yeni Map şemasına dönüştürür.">
-                            <i data-lucide="database-backup" class="w-4 h-4"></i>
-                            Eski Soruları Senkronize Et
-                        </button>
-                        <button type="button" id="reset-config-btn"
-                            class="px-4 py-2.5 bg-neutral-950 hover:bg-red-950/20 hover:text-red-400 border border-neutral-800 hover:border-red-900/40 text-neutral-400 rounded-xl text-sm font-semibold transition cursor-pointer">
-                            Sıfırla
-                        </button>
-                        <button type="submit"
-                            class="px-6 py-2.5 bg-white hover:bg-emerald-50 hover:text-emerald-950 text-black rounded-xl text-sm font-semibold shadow-lg shadow-emerald-950/20 transition cursor-pointer flex items-center gap-2">
-                            <i data-lucide="save" class="w-4 h-4"></i>
-                            Yapılandırmayı Kaydet
+                    <!-- Giriş Yapılmamış Durum -->
+                    <div id="auth-logged-out-box" class="space-y-4">
+                        <p class="text-xs text-neutral-400 leading-relaxed">
+                            Kilitli veritabanına erişim sağlamak ve soruları yönetebilmek için yetkili Firebase yönetici hesabınızla giriş yapınız. Parolanız asla tarayıcıda veya sunucuda saklanmaz.
+                        </p>
+                        <form id="auth-login-form" class="grid grid-cols-1 md:grid-cols-5 gap-3 items-end">
+                            <div class="md:col-span-2">
+                                <label class="block text-xs font-semibold text-neutral-400 mb-1.5 uppercase">Yönetici E-Posta</label>
+                                <input type="email" id="auth-email" required placeholder="admin@kelimego.com" autocomplete="username"
+                                    class="w-full px-4 py-2.5 bg-black border border-neutral-800 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-emerald-800/40 focus:border-emerald-700 transition text-sm">
+                            </div>
+                            <div class="md:col-span-2">
+                                <label class="block text-xs font-semibold text-neutral-400 mb-1.5 uppercase">Parola</label>
+                                <input type="password" id="auth-password" required placeholder="••••••••" autocomplete="current-password"
+                                    class="w-full px-4 py-2.5 bg-black border border-neutral-800 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-emerald-800/40 focus:border-emerald-700 transition text-sm">
+                            </div>
+                            <div class="md:col-span-1">
+                                <button type="submit" id="auth-login-btn"
+                                    class="w-full px-4 py-2.5 bg-emerald-500 hover:bg-emerald-400 text-black rounded-xl text-sm font-bold shadow-lg shadow-emerald-500/20 transition cursor-pointer flex items-center justify-center gap-2">
+                                    <i data-lucide="log-in" class="w-4 h-4"></i>
+                                    <span id="auth-login-btn-text">Giriş Yap</span>
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+
+                    <!-- Giriş Yapılmış Durum -->
+                    <div id="auth-logged-in-box" class="hidden p-4 bg-black/40 border border-emerald-950/60 rounded-2xl flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                        <div class="flex items-center gap-3">
+                            <div class="w-9 h-9 rounded-xl bg-emerald-950/40 border border-emerald-800/50 flex items-center justify-center text-emerald-400">
+                                <i data-lucide="user-check" class="w-5 h-5"></i>
+                            </div>
+                            <div>
+                                <span class="text-xs text-neutral-400 block font-medium">Aktif Oturum Açık:</span>
+                                <span id="auth-current-user-email" class="text-sm font-mono text-emerald-300 font-semibold">admin@kelimego.com</span>
+                            </div>
+                        </div>
+                        <button type="button" id="panel-logout-btn"
+                            class="px-4 py-2 bg-neutral-900 hover:bg-red-950/30 hover:border-red-900/40 text-neutral-300 hover:text-red-400 border border-neutral-800 rounded-xl text-xs font-semibold transition cursor-pointer flex items-center justify-center gap-2 self-start sm:self-auto">
+                            <i data-lucide="log-out" class="w-4 h-4"></i>
+                            <span>Çıkış Yap</span>
                         </button>
                     </div>
-                </form>
+                </div>
+
             </div>
         </div>
 

@@ -38,11 +38,50 @@ Although originally designed specifically for KelimeGo, the ideas and architectu
 ## Features
 
 - Firebase Realtime Database integration
-- Question management
+- Firebase Authentication (Email & Password administrator login)
+- Automatic `content_version` synchronization with debounced cache bumping
+- Question management & Alternative answer mapping
 - Category management
-- Alternative answer management
-- Localhost-based administration panel
-- Lightweight single-file architecture
+- Full data import/export (JSON backup & selective export)
+- Localhost-based lightweight administration panel
+
+---
+
+## Configuration & Security
+
+### 1. Firebase Authentication
+Bu panel kilitli Firebase Realtime Database yapıları için tasarlanmıştır:
+- Panel arayüzünden **Firebase Ayarları** açılarak proje kimlik bilgileri girilir.
+- Ardından yetkili yönetici hesabı (**E-posta + Parola**) ile giriş yapılır.
+- Parola asla yerel depolamada (`localStorage`) tutulmaz; oturum güvenliği Firebase Auth'un `browserLocalPersistence` mekanizması ile sağlanır.
+
+### 2. Realtime Database Güvenlik Kuralları (Örnek)
+Veritabanını yalnızca yetkili yönetici hesabının yazıp okuyabilmesi için Firebase Realtime Database kurallarında yönetici UID'si kilitlenmelidir (örnek şablon):
+
+```json
+{
+  "rules": {
+    "questions_pool": {
+      ".read": "auth != null && auth.uid === '<YONETICI_UID>'",
+      ".write": "auth != null && auth.uid === '<YONETICI_UID>'"
+    },
+    "cms_categories": {
+      ".read": "auth != null && auth.uid === '<YONETICI_UID>'",
+      ".write": "auth != null && auth.uid === '<YONETICI_UID>'"
+    },
+    "content_version": {
+      ".read": true,
+      ".write": "auth != null && auth.uid === '<YONETICI_UID>'"
+    }
+  }
+}
+```
+> **Not:** Mobil oyun istemcisi soru havuzunu ve kategorileri genel okuyorsa `.read` izinleri oyun mimarinize göre (`true` veya istemci auth kuralı ile) yapılandırılabilir. `content_version` alanı oyun istemcilerinin önbellek yenileme kontrolü yapabilmesi için genel okumaya (`true`) açık tutulabilir.
+
+### 3. `content_version` ve Oyun Önbelleği
+- CMS paneli üzerinden yapılan soru ekleme, düzenleme, silme, taşıma ve toplu içe aktarma işlemlerinde veritabanındaki `content_version` düğümü otomatik olarak güncel zaman damgasıyla (`Date.now()`) güncellenir.
+- Hızlı art arda yapılan düzenlemelerde sunucuya gereksiz yazma maliyetini önlemek amacıyla **1.5 saniyelik debounce** kullanılır.
+- Üst menüde (Header) yer alan **"Oyuna Yansıt"** butonu kullanılarak sürüm güncellemesi dilediğiniz an manuel ve anlık olarak tetiklenebilir.
 
 ---
 

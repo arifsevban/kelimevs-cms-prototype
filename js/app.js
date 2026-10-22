@@ -165,6 +165,14 @@ function debounce(func, wait = 60) {
 
 import { initializeApp, deleteApp, getApp } from 'https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js';
 import { getDatabase, ref, set, onValue, remove, get } from 'https://www.gstatic.com/firebasejs/12.15.0/firebase-database.js';
+import { 
+    getAuth, 
+    signInWithEmailAndPassword, 
+    signOut, 
+    onAuthStateChanged, 
+    setPersistence, 
+    browserLocalPersistence 
+} from 'https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js';
 
 function toTurkishLowerCase(str) {
     if (!str) return '';
@@ -277,11 +285,61 @@ const PLACEHOLDERS = {
 
 let firebaseApp = null;
 let db = null;
+let auth = null;
+let currentUser = null;
 let isFirebaseConnected = false;
 let questionsData = {}; // Stores all questions from DB
 let questionsListener = null;
+let categoriesListener = null;
+let authUnsubscribe = null;
 
+let isBumpPending = false;
+let bumpTimer = null;
 
+function bumpContentVersion(immediate = false) {
+    if (!db || !currentUser) {
+        return Promise.resolve(false);
+    }
+
+    const executeBump = async () => {
+        isBumpPending = false;
+        try {
+            await set(ref(db, 'content_version'), Date.now());
+            return true;
+        } catch (err) {
+            console.error('content_version bump error:', err);
+            showToast("Değişiklik kaydedildi ancak oyuna yansıtılamadı. Lütfen 'Oyuna Yansıt' butonunu kullanın.", "warning");
+            return false;
+        }
+    };
+
+    if (immediate) {
+        if (bumpTimer) {
+            clearTimeout(bumpTimer);
+            bumpTimer = null;
+        }
+        return executeBump();
+    }
+
+    isBumpPending = true;
+    if (bumpTimer) {
+        clearTimeout(bumpTimer);
+    }
+
+    return new Promise((resolve) => {
+        bumpTimer = setTimeout(async () => {
+            const success = await executeBump();
+            resolve(success);
+        }, 1500);
+    });
+}
+
+window.addEventListener('beforeunload', (e) => {
+    if (isBumpPending) {
+        e.preventDefault();
+        e.returnValue = '';
+    }
+});
 
 let isEditMode = false;
 let editQuestionId = null;
@@ -297,6 +355,21 @@ const migrateDbBtn = document.getElementById('migrate-db-btn');
 const dbStatusBadge = document.getElementById('db-status-badge');
 const exportBackupBtn = document.getElementById('export-backup-btn');
 const importBackupInput = document.getElementById('import-backup-input');
+
+// Auth and Sync DOM Elements
+const syncGameBtn = document.getElementById('sync-game-btn');
+const authHeaderSection = document.getElementById('auth-header-section');
+const authHeaderEmail = document.getElementById('auth-header-email');
+const headerLogoutBtn = document.getElementById('header-logout-btn');
+const authLoginForm = document.getElementById('auth-login-form');
+const authEmailInput = document.getElementById('auth-email');
+const authPasswordInput = document.getElementById('auth-password');
+const authLoginBtn = document.getElementById('auth-login-btn');
+const authLoginBtnText = document.getElementById('auth-login-btn-text');
+const authLoggedOutBox = document.getElementById('auth-logged-out-box');
+const authLoggedInBox = document.getElementById('auth-logged-in-box');
+const authCurrentUserEmail = document.getElementById('auth-current-user-email');
+const panelLogoutBtn = document.getElementById('panel-logout-btn');
 
 const questionForm = document.getElementById('question-form');
 const formTitle = document.getElementById('form-title');
@@ -649,8 +722,8 @@ function showToast(message, type = 'info') {
 }
 
 async function exportBackupData() {
-    if (!db) {
-        showToast('Firebase bağlantısı yok. Önce veritabanını yapılandırın.', 'error');
+    if (!db || !currentUser) {
+        showToast('Yedek indirmek için önce yönetici girişi yapmalısınız.', 'error');
         return;
     }
 
@@ -751,8 +824,8 @@ const customExportQuestionsList = document.getElementById('custom-export-questio
 const customExportSelectAllBtn = document.getElementById('custom-export-select-all-btn');
 
 async function openCustomExportModal() {
-    if (!db) {
-        showToast('Firebase bağlantısı yok. Önce veritabanını yapılandırın.', 'error');
+    if (!db || !currentUser) {
+        showToast('Özel soru indirmek için önce yönetici girişi yapmalısınız.', 'error');
         return;
     }
 
@@ -1017,8 +1090,8 @@ async function startCustomExport() {
 }
 
 async function importBackupData(file) {
-    if (!db) {
-        showToast('Firebase bağlantısı yok. Önce veritabanını yapılandırın.', 'error');
+    if (!db || !currentUser) {
+        showToast('Firebase bağlantısı yok veya yönetici girişi yapılmamış. Önce giriş yapın.', 'error');
         return;
     }
 
@@ -1154,6 +1227,9 @@ async function importBackupData(file) {
                     renderCategoryManageList();
                 }
             }
+
+            // Toplu işlem sonunda TEK sefer içerik sürümünü artır
+            await bumpContentVersion(true);
 
             showToast(`${questionCount} soru var olan soruların üzerine başarıyla eklendi.`, 'success');
         } catch (err) {
@@ -1322,16 +1398,120 @@ function loadConfigFromStorage() {
     return null;
 }
 
-function updateConnectionBadge(connected, message = '') {
-    isFirebaseConnected = connected;
-    if (connected) {
-        dbStatusBadge.className = "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-neutral-900 text-neutral-200 border border-neutral-800";
-        dbStatusBadge.innerHTML = `<span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span> Firebase Bağlı`;
+function updateConnectionBadge(status, message = '') {
+    if (status === 'logged_in' || (status === true && currentUser)) {
+        isFirebaseConnected = true;
+        const email = currentUser?.email || 'Yönetici';
+        dbStatusBadge.className = "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-emerald-950/40 text-emerald-300 border border-emerald-800/60";
+        dbStatusBadge.innerHTML = `<span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span> Bağlı (${escapeHtml(email)})`;
         if (message) showToast(message, 'success');
+    } else if (status === 'logged_out' || (status === true && !currentUser)) {
+        isFirebaseConnected = false;
+        dbStatusBadge.className = "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-amber-950/40 text-amber-300 border border-amber-800/60";
+        dbStatusBadge.innerHTML = `<span class="w-2 h-2 rounded-full bg-amber-500"></span> Giriş Yapılmadı`;
+        if (message) showToast(message, 'warning');
     } else {
+        isFirebaseConnected = false;
         dbStatusBadge.className = "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-neutral-900 text-neutral-400 border border-neutral-800";
-        dbStatusBadge.innerHTML = `<span class="w-2 h-2 rounded-full bg-rose-500 animate-pulse"></span> Bağlantı Yok`;
+        dbStatusBadge.innerHTML = `<span class="w-2 h-2 rounded-full bg-rose-500"></span> Bağlantı Yok`;
         if (message) showToast(message, 'error');
+    }
+}
+
+function updateAuthUI(user) {
+    if (user) {
+        if (authLoggedOutBox) authLoggedOutBox.classList.add('hidden');
+        if (authLoggedInBox) authLoggedInBox.classList.remove('hidden');
+        if (authCurrentUserEmail) authCurrentUserEmail.textContent = user.email || 'Bilinmiyor';
+
+        if (authHeaderSection) {
+            authHeaderSection.classList.remove('hidden');
+            authHeaderSection.classList.add('flex');
+        }
+        if (authHeaderEmail) {
+            authHeaderEmail.textContent = user.email || '';
+            authHeaderEmail.title = `Giriş yapılmış hesap: ${user.email || ''}`;
+        }
+    } else {
+        if (authLoggedOutBox) authLoggedOutBox.classList.remove('hidden');
+        if (authLoggedInBox) authLoggedInBox.classList.add('hidden');
+        if (authHeaderSection) {
+            authHeaderSection.classList.add('hidden');
+            authHeaderSection.classList.remove('flex');
+        }
+        if (authHeaderEmail) authHeaderEmail.textContent = '';
+        if (authPasswordInput) authPasswordInput.value = '';
+    }
+    if (window.lucide) lucide.createIcons();
+}
+
+function cleanupDatabaseListeners() {
+    if (typeof questionsListener === 'function') {
+        try { questionsListener(); } catch (e) { }
+        questionsListener = null;
+    }
+    if (typeof categoriesListener === 'function') {
+        try { categoriesListener(); } catch (e) { }
+        categoriesListener = null;
+    }
+}
+
+async function loginUser(email, password) {
+    if (!auth) {
+        showToast("Önce Firebase yapılandırmasını kaydedin.", "error");
+        return;
+    }
+    if (!email || !password) {
+        showToast("Lütfen e-posta ve parola giriniz.", "error");
+        return;
+    }
+
+    if (authLoginBtn) {
+        authLoginBtn.disabled = true;
+    }
+    if (authLoginBtnText) {
+        authLoginBtnText.textContent = "Giriş Yapılıyor...";
+    }
+
+    try {
+        await signInWithEmailAndPassword(auth, email, password);
+        showToast("Yönetici girişi başarılı!", "success");
+        if (authPasswordInput) authPasswordInput.value = '';
+        if (configPanel && !configPanel.classList.contains('hidden')) {
+            configPanel.classList.add('hidden');
+        }
+    } catch (err) {
+        console.error("Login failure:", err);
+        let msg = "Giriş başarısız oldu: " + err.message;
+        if (err.code === 'auth/invalid-credential' || err.code === 'auth/wrong-password') {
+            msg = "E-posta veya parola hatalı.";
+        } else if (err.code === 'auth/user-not-found') {
+            msg = "Bu e-posta adresiyle kayıtlı kullanıcı bulunamadı.";
+        } else if (err.code === 'auth/invalid-email') {
+            msg = "Geçersiz e-posta adresi formatı.";
+        } else if (err.code === 'auth/too-many-requests') {
+            msg = "Çok fazla başarısız deneme yapıldı. Lütfen biraz bekleyin.";
+        } else if (err.code === 'auth/network-request-failed') {
+            msg = "Ağ bağlantı hatası. İnternetinizi kontrol edin.";
+        }
+        showToast(msg, "error");
+    } finally {
+        if (authLoginBtn) authLoginBtn.disabled = false;
+        if (authLoginBtnText) authLoginBtnText.textContent = "Giriş Yap";
+    }
+}
+
+async function logoutUser() {
+    if (!auth) return;
+    const confirmed = await appConfirm("Oturumu kapatmak istediğinize emin misiniz?");
+    if (!confirmed) return;
+
+    try {
+        await signOut(auth);
+        showToast("Oturum kapatıldı.", "info");
+    } catch (err) {
+        console.error("Logout failure:", err);
+        showToast("Çıkış yapılırken bir hata oluştu: " + err.message, "error");
     }
 }
 
@@ -1342,6 +1522,11 @@ async function setupFirebase(config) {
     }
 
     try {
+        cleanupDatabaseListeners();
+        if (typeof authUnsubscribe === 'function') {
+            try { authUnsubscribe(); } catch (e) { }
+            authUnsubscribe = null;
+        }
 
         try {
             const currentApp = getApp();
@@ -1350,11 +1535,30 @@ async function setupFirebase(config) {
 
         firebaseApp = initializeApp(config);
         db = getDatabase(firebaseApp);
-        updateConnectionBadge(true, "Firebase yapılandırması başarıyla uygulandı.");
+        auth = getAuth(firebaseApp);
 
-        listenToQuestions();
+        try {
+            await setPersistence(auth, browserLocalPersistence);
+        } catch (pErr) {
+            console.warn("Auth persistence error:", pErr);
+        }
 
-        listenToCategories();
+        authUnsubscribe = onAuthStateChanged(auth, (user) => {
+            currentUser = user;
+            updateAuthUI(user);
+
+            if (user) {
+                updateConnectionBadge('logged_in');
+                listenToQuestions();
+                listenToCategories();
+            } else {
+                cleanupDatabaseListeners();
+                questionsData = {};
+                questionsIndex = [];
+                renderQuestionList();
+                updateConnectionBadge('logged_out');
+            }
+        });
 
         return true;
     } catch (err) {
@@ -1365,10 +1569,10 @@ async function setupFirebase(config) {
 }
 
 function listenToQuestions() {
-    if (!db) return;
+    if (!db || !currentUser) return;
 
     if (typeof questionsListener === 'function') {
-        questionsListener();
+        try { questionsListener(); } catch (e) { }
     }
 
     const dbRef = ref(db, 'questions_pool');
@@ -1393,10 +1597,10 @@ function listenToQuestions() {
 }
 
 function listenToCategories() {
-    if (!db) return;
+    if (!db || !currentUser) return;
 
     if (typeof categoriesListener === 'function') {
-        categoriesListener();
+        try { categoriesListener(); } catch (e) { }
     }
 
     const catRef = ref(db, 'cms_categories');
@@ -1413,9 +1617,11 @@ function listenToCategories() {
                     if (!categoryManageList.classList.contains('hidden')) renderCategoryManageList();
                 }
             } else {
-
-                const localCats = loadCategories();
-                set(catRef, localCats).catch(err => console.error('Initial category push error:', err));
+                // cms_categories yazımı content_version TETİKLEMESİN; yalnızca giriş yapılmışken otomatik ilk yazma çalışsın
+                if (currentUser) {
+                    const localCats = loadCategories();
+                    set(catRef, localCats).catch(err => console.error('Initial category push error:', err));
+                }
             }
         }, (error) => {
             console.error("Firebase categories read error:", error);
@@ -1519,7 +1725,10 @@ if (cancelEditBtn) {
 }
 
 async function deleteQuestion(category, id) {
-    if (!db) return;
+    if (!db || !currentUser) {
+        showToast("Soru silmek için önce yönetici girişi yapmalısınız.", "error");
+        return;
+    }
     const confirmed = await appConfirm("Bu soruyu silmek istediğinize emin misiniz?");
     if (!confirmed) {
         return;
@@ -1529,6 +1738,9 @@ async function deleteQuestion(category, id) {
         const dbRef = ref(db, `questions_pool/${category}/${id}`);
         await remove(dbRef);
         showToast("Soru başarıyla silindi.", "success");
+
+        // Başarılı silme sonrası içerik sürümünü güncelle (debounced)
+        bumpContentVersion();
 
         if (isEditMode && editQuestionId === id) {
             cancelEdit();
@@ -1540,7 +1752,10 @@ async function deleteQuestion(category, id) {
 }
 
 async function changeCategoryOfQuestion(q) {
-    if (!db) return;
+    if (!db || !currentUser) {
+        showToast("Kategori değiştirmek için önce yönetici girişi yapmalısınız.", "error");
+        return;
+    }
 
     const cats = loadCategories();
     const categoryNames = {};
@@ -1600,6 +1815,9 @@ async function changeCategoryOfQuestion(q) {
                 const oldRef = ref(db, `questions_pool/${q.category}/${q.id}`);
                 await remove(oldRef);
 
+                // Taşıma işlemi tamamlandıktan sonra sürümü güncelle (debounced)
+                bumpContentVersion();
+
                 showToast(`Soru "${newCatLabel}" kategorisine taşındı.`, 'success');
 
                 if (isEditMode && editQuestionId === q.id) {
@@ -1628,23 +1846,31 @@ resetConfigBtn.onclick = async (e) => {
     if (e) e.preventDefault();
     const confirmed = await appConfirm("Firebase yapılandırma verilerini sıfırlamak istediğinize emin misiniz?");
     if (confirmed) {
+        if (auth && currentUser) {
+            try { await signOut(auth); } catch (e) { }
+        }
+        cleanupDatabaseListeners();
         localStorage.removeItem('firebase_cms_config');
         configForm.reset();
-        updateConnectionBadge(false, "Firebase ayarları temizlendi.");
         db = null;
+        auth = null;
         firebaseApp = null;
+        currentUser = null;
 
         questionsData = {};
-                rebuildQuestionsIndex();
+        rebuildQuestionsIndex();
         renderQuestionList();
+
+        updateAuthUI(null);
+        updateConnectionBadge(false, "Firebase ayarları temizlendi.");
     }
 };
 
 migrateDbBtn.onclick = async (e) => {
     if (e) e.preventDefault();
 
-    if (!isFirebaseConnected || !db) {
-        showToast("Firebase veritabanı bağlı değil! Göç işlemi için önce bağlantı kurmalısınız.", "error");
+    if (!isFirebaseConnected || !db || !currentUser) {
+        showToast("Firebase veritabanı bağlı değil veya yönetici girişi yapılmamış! Önce giriş yapmalısınız.", "error");
         return;
     }
 
@@ -1692,6 +1918,11 @@ migrateDbBtn.onclick = async (e) => {
             }
         }
 
+        if (migratedCount > 0) {
+            // Toplu göç işlemi sonunda tek sefer içerik sürümünü artır
+            await bumpContentVersion(true);
+        }
+
         showToast(`${migratedCount} eski soru yeni Map şemasına başarıyla göç ettirildi!`, "success");
     } catch (err) {
         console.error("Migration failed:", err);
@@ -1723,9 +1954,58 @@ configForm.onsubmit = async (e) => {
     localStorage.setItem('firebase_cms_config', JSON.stringify(config));
     const success = await setupFirebase(config);
     if (success) {
-        configPanel.classList.add('hidden');
+        if (!currentUser) {
+            showToast("Firebase yapılandırması kaydedildi. Lütfen şimdi yönetici hesabınızla giriş yapın.", "info");
+            if (authEmailInput) authEmailInput.focus();
+        } else {
+            configPanel.classList.add('hidden');
+        }
     }
 };
+
+// Auth Form Listeners
+if (authLoginForm) {
+    authLoginForm.onsubmit = async (e) => {
+        e.preventDefault();
+        const email = authEmailInput.value.trim();
+        const password = authPasswordInput.value;
+        await loginUser(email, password);
+    };
+}
+
+if (headerLogoutBtn) {
+    headerLogoutBtn.onclick = () => logoutUser();
+}
+
+if (panelLogoutBtn) {
+    panelLogoutBtn.onclick = () => logoutUser();
+}
+
+// Oyuna Yansıt Butonu (Header Sync Button)
+if (syncGameBtn) {
+    syncGameBtn.onclick = async () => {
+        if (!db || !currentUser) {
+            showToast("Oyuna yansıtmak için önce yönetici girişi yapmalısınız.", "error");
+            return;
+        }
+
+        const origHTML = syncGameBtn.innerHTML;
+        syncGameBtn.disabled = true;
+        syncGameBtn.innerHTML = `<i data-lucide="loader-2" class="w-3.5 h-3.5 animate-spin text-amber-400"></i><span>Yansıtılıyor...</span>`;
+        if (window.lucide) lucide.createIcons();
+
+        try {
+            const success = await bumpContentVersion(true);
+            if (success) {
+                showToast("İçerik sürümü başarıyla güncellendi (Oyuna yansıtıldı).", "success");
+            }
+        } finally {
+            syncGameBtn.disabled = false;
+            syncGameBtn.innerHTML = origHTML;
+            if (window.lucide) lucide.createIcons();
+        }
+    };
+}
 
 let answerCounter = 0;
 
@@ -1976,8 +2256,8 @@ categorySelect.onchange = () => {
 questionForm.onsubmit = async (e) => {
     e.preventDefault();
 
-    if (!isFirebaseConnected || !db) {
-        showToast("Firebase veritabanı bağlı değil! Lütfen ayarlardan yapılandırmanızı girin.", "error");
+    if (!db || !currentUser) {
+        showToast("Firebase veritabanı bağlı değil veya yönetici girişi yapılmamış! Lütfen önce giriş yapın.", "error");
         configPanel.classList.remove('hidden');
         configPanel.scrollIntoView({ behavior: 'smooth' });
         return;
@@ -2051,28 +2331,31 @@ questionForm.onsubmit = async (e) => {
         };
 
         if (isEditMode) {
-
             const oldPath = `questions_pool/${editOriginalCategory}/${editQuestionId}`;
             const newPath = `questions_pool/${kategori}/${editQuestionId}`;
 
             if (editOriginalCategory !== kategori) {
-
                 await set(ref(db, newPath), questionData);
                 await remove(ref(db, oldPath));
             } else {
-
                 await set(ref(db, oldPath), questionData);
             }
+
+            // Soru güncellendiğinde içerik sürümünü güncelle (debounced 1.5 sn)
+            bumpContentVersion();
 
             showToast("Soru başarıyla güncellendi!", "success");
             cancelEdit();
         } else {
-
             const timestamp = Date.now();
             const soruId = `q_${timestamp}`;
             const dbRef = ref(db, `questions_pool/${kategori}/${soruId}`);
 
             await set(dbRef, questionData);
+
+            // Yeni soru eklendiğinde içerik sürümünü güncelle (debounced 1.5 sn)
+            bumpContentVersion();
+
             showToast("Soru başarıyla kaydedildi!", "success");
 
             questionForm.reset();
