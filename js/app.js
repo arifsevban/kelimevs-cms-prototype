@@ -413,7 +413,6 @@ const DEFAULT_CATEGORIES = [
 ];
 
 let categoriesCache = null;
-let categoriesListener = null;
 
 function loadCategories() {
     if (categoriesCache) return categoriesCache;
