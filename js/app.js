@@ -360,7 +360,6 @@ const importOverwriteCheckbox = document.getElementById('import-overwrite-checkb
 // Auth and Sync DOM Elements
 const syncGameBtn = document.getElementById('sync-game-btn');
 const authHeaderSection = document.getElementById('auth-header-section');
-const authHeaderEmail = document.getElementById('auth-header-email');
 const headerLogoutBtn = document.getElementById('header-logout-btn');
 const authLoginForm = document.getElementById('auth-login-form');
 const authEmailInput = document.getElementById('auth-email');
@@ -739,7 +738,7 @@ async function exportBackupData() {
         const categoriesData = categoriesSnapshot.exists() ? categoriesSnapshot.val() : [];
 
         const backup = {
-            app: 'KelimeGo CMS',
+            app: 'KelimeVS CMS',
             version: '1.0',
             exported_at: new Date().toISOString(),
             questions_pool: questionsData,
@@ -750,7 +749,7 @@ async function exportBackupData() {
         const now = new Date();
         const pad = n => String(n).padStart(2, '0');
         const datestamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}_${pad(now.getHours())}-${pad(now.getMinutes())}`;
-        const filename = `kelimego_yedek_${datestamp}.json`;
+        const filename = `kelimevs_yedek_${datestamp}.json`;
 
         if ('showSaveFilePicker' in window) {
             try {
@@ -1037,7 +1036,7 @@ async function startCustomExport() {
         });
 
         const backup = {
-            app: 'KelimeGo CMS',
+            app: 'KelimeVS CMS',
             export_type: 'custom_selection',
             version: '1.0',
             exported_at: new Date().toISOString(),
@@ -1050,7 +1049,7 @@ async function startCustomExport() {
         const now = new Date();
         const pad = n => String(n).padStart(2, '0');
         const datestamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}_${pad(now.getHours())}-${pad(now.getMinutes())}`;
-        const filename = `kelimego_ozel_sorular_${questionsToExport.length}_adet_${datestamp}.json`;
+        const filename = `kelimevs_ozel_sorular_${questionsToExport.length}_adet_${datestamp}.json`;
 
         if ('showSaveFilePicker' in window) {
             try {
@@ -1092,7 +1091,7 @@ async function startCustomExport() {
 function triggerAutoBackup(questions, categories) {
     try {
         const backup = {
-            app: 'KelimeGo CMS',
+            app: 'KelimeVS CMS',
             version: '1.0',
             exported_at: new Date().toISOString(),
             backup_type: 'auto_pre_import',
@@ -1104,7 +1103,7 @@ function triggerAutoBackup(questions, categories) {
         const now = new Date();
         const pad = n => String(n).padStart(2, '0');
         const datestamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}_${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`;
-        const filename = `kelimego_otomatik_yedek_${datestamp}.json`;
+        const filename = `kelimevs_otomatik_yedek_${datestamp}.json`;
 
         const blob = new Blob([json], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
@@ -1162,7 +1161,7 @@ async function importBackupData(file) {
         }
 
         if (!questionsPool || typeof questionsPool !== 'object') {
-            showToast('Bu dosya KelimeGo soru şemasına uygun değil. Lütfen geçerli bir yedek dosyası seçin.', 'error');
+            showToast('Bu dosya KelimeVS soru şemasına uygun değil. Lütfen geçerli bir yedek dosyası seçin.', 'error');
             return;
         }
 
@@ -1533,9 +1532,8 @@ function loadConfigFromStorage() {
 function updateConnectionBadge(status, message = '') {
     if (status === 'logged_in' || (status === true && currentUser)) {
         isFirebaseConnected = true;
-        const email = currentUser?.email || 'Yönetici';
         dbStatusBadge.className = "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-emerald-950/40 text-emerald-300 border border-emerald-800/60";
-        dbStatusBadge.innerHTML = `<span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span> Bağlı (${escapeHtml(email)})`;
+        dbStatusBadge.innerHTML = `<span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span> Bağlı`;
         if (message) showToast(message, 'success');
     } else if (status === 'logged_out' || (status === true && !currentUser)) {
         isFirebaseConnected = false;
@@ -1560,10 +1558,6 @@ function updateAuthUI(user) {
             authHeaderSection.classList.remove('hidden');
             authHeaderSection.classList.add('flex');
         }
-        if (authHeaderEmail) {
-            authHeaderEmail.textContent = user.email || '';
-            authHeaderEmail.title = `Giriş yapılmış hesap: ${user.email || ''}`;
-        }
     } else {
         if (authLoggedOutBox) authLoggedOutBox.classList.remove('hidden');
         if (authLoggedInBox) authLoggedInBox.classList.add('hidden');
@@ -1571,7 +1565,6 @@ function updateAuthUI(user) {
             authHeaderSection.classList.add('hidden');
             authHeaderSection.classList.remove('flex');
         }
-        if (authHeaderEmail) authHeaderEmail.textContent = '';
         if (authPasswordInput) authPasswordInput.value = '';
     }
     if (window.lucide) lucide.createIcons();
