@@ -355,6 +355,7 @@ const migrateDbBtn = document.getElementById('migrate-db-btn');
 const dbStatusBadge = document.getElementById('db-status-badge');
 const exportBackupBtn = document.getElementById('export-backup-btn');
 const importBackupInput = document.getElementById('import-backup-input');
+const importOverwriteCheckbox = document.getElementById('import-overwrite-checkbox');
 
 // Auth and Sync DOM Elements
 const syncGameBtn = document.getElementById('sync-game-btn');
@@ -1088,6 +1089,38 @@ async function startCustomExport() {
     }
 }
 
+function triggerAutoBackup(questions, categories) {
+    try {
+        const backup = {
+            app: 'KelimeGo CMS',
+            version: '1.0',
+            exported_at: new Date().toISOString(),
+            backup_type: 'auto_pre_import',
+            questions_pool: questions || {},
+            cms_categories: categories || []
+        };
+
+        const json = JSON.stringify(backup, null, 2);
+        const now = new Date();
+        const pad = n => String(n).padStart(2, '0');
+        const datestamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}_${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`;
+        const filename = `kelimego_otomatik_yedek_${datestamp}.json`;
+
+        const blob = new Blob([json], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        showToast(`Mevcut havuzun güvenlik yedeği indirildi: "${filename}"`, 'info');
+    } catch (e) {
+        console.error('Auto backup error:', e);
+    }
+}
+
 async function importBackupData(file) {
     if (!db || !currentUser) {
         showToast('Firebase bağlantısı yok veya yönetici girişi yapılmamış. Önce giriş yapın.', 'error');
@@ -1168,38 +1201,122 @@ async function importBackupData(file) {
             return;
         }
 
-        const confirmed = await appConfirm(
-            `Bu işlem yedek dosyasındaki ${questionCount} soruyu veritabanında var olan soruların üzerine ekleyecektir/birleştirecektir. Devam etmek istediğinize emin misiniz?`
-        );
-        if (!confirmed) return;
-
         try {
             // Fetch existing data to perform merge
             const currentQuestionsSnapshot = await get(ref(db, 'questions_pool'));
             const currentQuestionsData = currentQuestionsSnapshot.exists() ? currentQuestionsSnapshot.val() : {};
+            const currentCategoriesSnapshot = await get(ref(db, 'cms_categories'));
+            const currentCategoriesData = currentCategoriesSnapshot.exists() ? currentCategoriesSnapshot.val() : loadCategories();
 
-            // Merge normalizedImportPool into currentQuestionsData (generate unique ID if collision occurs)
-            const mergedQuestionsPool = { ...currentQuestionsData };
+            const isOverwriteMode = Boolean(importOverwriteCheckbox && importOverwriteCheckbox.checked);
+            let mergedQuestionsPool = {};
+            let overwriteCount = 0;
+            let newCount = 0;
+            const overwrittenQuestions = [];
 
-            for (const categoryId in normalizedImportPool) {
-                if (!mergedQuestionsPool[categoryId]) {
-                    mergedQuestionsPool[categoryId] = {};
-                }
-                
-                const existingCategoryQuestions = mergedQuestionsPool[categoryId];
+            if (isOverwriteMode) {
+                // Kutu AÇIKKEN: Aynı kategori + aynı ID varsa üzerine yaz (tamamen değiştir), yoksa yeni ekle
+                mergedQuestionsPool = JSON.parse(JSON.stringify(currentQuestionsData));
 
-                for (const qId in normalizedImportPool[categoryId]) {
-                    const importedQ = normalizedImportPool[categoryId][qId];
-                    let targetQId = qId;
-
-                    // If ID already exists in this category, generate a new unique ID
-                    if (targetQId in existingCategoryQuestions) {
-                        targetQId = `q_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+                for (const categoryId in normalizedImportPool) {
+                    if (!mergedQuestionsPool[categoryId]) {
+                        mergedQuestionsPool[categoryId] = {};
                     }
 
-                    existingCategoryQuestions[targetQId] = importedQ;
+                    const existingCategoryQuestions = mergedQuestionsPool[categoryId];
+
+                    for (const qId in normalizedImportPool[categoryId]) {
+                        const importedQ = normalizedImportPool[categoryId][qId];
+
+                        if (qId in existingCategoryQuestions) {
+                            overwriteCount++;
+                            overwrittenQuestions.push({
+                                id: qId,
+                                category: categoryId,
+                                question: importedQ.question || '(Soru metni yok)'
+                            });
+                            // Mevcut soruyu dosyadaki sürümle TAMAMEN değiştir
+                            existingCategoryQuestions[qId] = importedQ;
+                        } else {
+                            newCount++;
+                            existingCategoryQuestions[qId] = importedQ;
+                        }
+                    }
+                }
+
+                // Onay modalı içeriği (İlk 10 üzerine yazılacak sorunun metnini listele)
+                const previewList = overwrittenQuestions.slice(0, 10);
+                const confirmMessageHtml = `
+                <div class="space-y-3">
+                    <div class="p-3 bg-neutral-950/70 border border-neutral-800 rounded-xl space-y-1.5">
+                        <div class="flex items-center justify-between text-xs">
+                            <span class="text-neutral-400">Üzerine yazılacak soru:</span>
+                            <span class="px-2 py-0.5 bg-amber-950/50 text-amber-300 border border-amber-900/50 rounded font-mono font-bold text-xs">${overwriteCount}</span>
+                        </div>
+                        <div class="flex items-center justify-between text-xs">
+                            <span class="text-neutral-400">Yeni eklenecek soru:</span>
+                            <span class="px-2 py-0.5 bg-emerald-950/50 text-emerald-300 border border-emerald-900/50 rounded font-mono font-bold text-xs">${newCount}</span>
+                        </div>
+                    </div>
+
+                    ${overwriteCount > 0 ? `
+                    <div class="space-y-1.5">
+                        <div class="text-[11px] font-bold uppercase tracking-wider text-neutral-400 flex items-center justify-between">
+                            <span>Üzerine Yazılacaklar (İlk ${previewList.length}):</span>
+                            ${overwriteCount > 10 ? `<span class="text-neutral-500 font-normal">Toplam ${overwriteCount} sorudan</span>` : ''}
+                        </div>
+                        <div class="max-h-48 overflow-y-auto space-y-1.5 border border-neutral-800 rounded-xl p-2 bg-black/70 text-left">
+                            ${previewList.map((item, idx) => `
+                                <div class="p-2 bg-neutral-900 border border-neutral-800 rounded-lg">
+                                    <div class="flex items-center justify-between text-[10px] text-neutral-400 mb-0.5">
+                                        <span class="text-emerald-400 font-bold">${idx + 1}. [${escapeHtml(item.category)}]</span>
+                                        <span class="font-mono text-neutral-500">${escapeHtml(item.id)}</span>
+                                    </div>
+                                    <div class="text-xs text-neutral-200 font-sans line-clamp-2">${escapeHtml(item.question)}</div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>` : ''}
+
+                    <p class="text-xs text-neutral-400 leading-relaxed border-t border-neutral-800 pt-2 text-left">
+                        <span class="text-emerald-400 font-semibold">Güvenlik:</span> Değişiklikler uygulanmadan önce mevcut havuzun tam yedeği otomatik olarak indirilecektir. Devam etmek istiyor musunuz?
+                    </p>
+                </div>`;
+
+                const confirmed = await appConfirm(confirmMessageHtml, true, true);
+                if (!confirmed) return;
+            } else {
+                // Kutu KAPALIYKEN (Mevcut davranış: çakışan ID için yeni benzersiz ID üretip ekler)
+                const confirmed = await appConfirm(
+                    `Bu işlem yedek dosyasındaki ${questionCount} soruyu veritabanında var olan soruların üzerine ekleyecektir/birleştirecektir. Devam etmek istediğinize emin misiniz?`
+                );
+                if (!confirmed) return;
+
+                mergedQuestionsPool = JSON.parse(JSON.stringify(currentQuestionsData));
+
+                for (const categoryId in normalizedImportPool) {
+                    if (!mergedQuestionsPool[categoryId]) {
+                        mergedQuestionsPool[categoryId] = {};
+                    }
+
+                    const existingCategoryQuestions = mergedQuestionsPool[categoryId];
+
+                    for (const qId in normalizedImportPool[categoryId]) {
+                        const importedQ = normalizedImportPool[categoryId][qId];
+                        let targetQId = qId;
+
+                        // If ID already exists in this category, generate a new unique ID
+                        if (targetQId in existingCategoryQuestions) {
+                            targetQId = `q_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+                        }
+
+                        existingCategoryQuestions[targetQId] = importedQ;
+                    }
                 }
             }
+
+            // Uygulamadan önce mevcut havuzun tam yedeğini otomatik olarak indir (geri dönülebilmesi için)
+            triggerAutoBackup(currentQuestionsData, currentCategoriesData);
 
             await set(ref(db, 'questions_pool'), mergedQuestionsPool);
 
@@ -1230,7 +1347,11 @@ async function importBackupData(file) {
             // Toplu işlem sonunda TEK sefer içerik sürümünü artır
             await bumpContentVersion(true);
 
-            showToast(`${questionCount} soru var olan soruların üzerine başarıyla eklendi.`, 'success');
+            if (isOverwriteMode) {
+                showToast(`${overwriteCount} soru üzerine yazıldı, ${newCount} yeni soru başarıyla eklendi.`, 'success');
+            } else {
+                showToast(`${questionCount} soru var olan soruların üzerine başarıyla eklendi.`, 'success');
+            }
         } catch (err) {
             console.error('Import error:', err);
             showToast('İçe aktarma sırasında bir hata oluştu: ' + err.message, 'error');
@@ -1331,9 +1452,17 @@ function hideModal() {
     }, 200);
 }
 
-function appConfirm(message) {
+function appConfirm(message, isHtml = false, isLarge = false) {
     return new Promise((resolve) => {
-        modalMessage.textContent = message;
+        if (isHtml) {
+            modalMessage.innerHTML = message;
+        } else {
+            modalMessage.textContent = message;
+        }
+        if (isLarge) {
+            modalCard.classList.remove('max-w-sm');
+            modalCard.classList.add('max-w-lg');
+        }
         modalInput.classList.add('hidden');
         modalConfirmBtn.textContent = 'Onayla';
         showModal();
@@ -1342,6 +1471,10 @@ function appConfirm(message) {
             modalConfirmBtn.onclick = null;
             modalCancelBtn.onclick = null;
             modalBackdrop.onclick = null;
+            if (isLarge) {
+                modalCard.classList.remove('max-w-lg');
+                modalCard.classList.add('max-w-sm');
+            }
             hideModal();
         };
 

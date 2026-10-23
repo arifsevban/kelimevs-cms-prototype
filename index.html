@@ -72,12 +72,21 @@
                     </button>
                 </div>
 
-                <label id="import-backup-label"
-                    class="p-2.5 bg-neutral-900 hover:bg-neutral-800 border border-neutral-800 rounded-xl text-neutral-300 hover:text-white text-sm font-medium transition cursor-pointer flex items-center justify-center"
-                    title="Verileri İçe Aktar (JSON)">
-                    <i data-lucide="upload" class="w-4 h-4 text-emerald-400"></i>
-                    <input type="file" id="import-backup-input" accept=".json,application/json" class="hidden">
-                </label>
+                <div class="flex items-center gap-1.5">
+                    <label id="import-backup-label"
+                        class="p-2.5 bg-neutral-900 hover:bg-neutral-800 border border-neutral-800 rounded-xl text-neutral-300 hover:text-white text-sm font-medium transition cursor-pointer flex items-center justify-center"
+                        title="Verileri İçe Aktar (JSON)">
+                        <i data-lucide="upload" class="w-4 h-4 text-emerald-400"></i>
+                        <input type="file" id="import-backup-input" accept=".json,application/json" class="hidden">
+                    </label>
+
+                    <label class="flex items-center gap-1.5 px-2.5 py-2 bg-neutral-900 hover:bg-neutral-800 border border-neutral-800 rounded-xl text-neutral-400 hover:text-neutral-200 cursor-pointer select-none transition"
+                        title="İçe aktarma sırasında aynı kategori ve ID varsa yeni kopya üretmek yerine üzerine yazar">
+                        <input type="checkbox" id="import-overwrite-checkbox"
+                            class="w-3.5 h-3.5 accent-emerald-500 rounded bg-black border-neutral-800 cursor-pointer">
+                        <span class="text-[11px] font-semibold whitespace-nowrap">Üzerine Yaz</span>
+                    </label>
+                </div>
 
                 <button id="toggle-config-btn"
                     class="px-4 py-2 bg-neutral-900 hover:bg-neutral-800 border border-neutral-800 rounded-xl text-neutral-300 hover:text-white text-sm font-medium transition cursor-pointer flex items-center gap-2">
